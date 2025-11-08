@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import styled from "styled-components";
 import type { CustomNodeProps } from ".";
 import useConfig from "../../../../../store/useConfig";
+import useGraph from "../stores/useGraph";
+import useJson from "../../../../../store/useJson";
 import { isContentImage } from "../lib/utils/calculateNodeSize";
 import { TextRenderer } from "./TextRenderer";
 import * as Styled from "./styles";
@@ -27,14 +29,66 @@ const StyledImage = styled.img`
 `;
 
 const Node = ({ node, x, y }: CustomNodeProps) => {
-  const { text, width, height } = node;
+  const { text, width, height, id, path } = node;
   const imagePreviewEnabled = useConfig(state => state.imagePreviewEnabled);
   const isImage = imagePreviewEnabled && isContentImage(JSON.stringify(text[0].value));
   const value = text[0].value;
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+  const setSelectedNode = useGraph(state => state.setSelectedNode);
+  const nodes = useGraph(state => state.nodes);
+  const setGraph = useGraph(state => state.setGraph);
+  const setJson = useJson(state => state.setJson);
+  const json = useJson(state => state.json);
+
+  // Helper to update value in JSON
+  const updateJsonValue = (newValue: string | number | null) => {
+    try {
+      // Parse current JSON
+      const parsed = JSON.parse(json);
+      // Traverse to path and update value
+      let ref = parsed;
+      if (path && path.length > 0) {
+        for (let i = 0; i < path.length - 1; i++) {
+          ref = ref[path[i]];
+        }
+        ref[path[path.length - 1]] = newValue;
+      }
+      setJson(JSON.stringify(parsed, null, 2));
+    } catch (e) {
+      // fallback: do nothing
+    }
+  };
+
+  const handleEdit = () => {
+    setEditing(true);
+    setEditValue(value);
+  };
+
+  const handleSave = () => {
+    // Update node value in graph
+    const updatedNodes = nodes.map(n => {
+      if (n.id === id) {
+        const newText = [...n.text];
+        newText[0] = { ...newText[0], value: editValue };
+        return { ...n, text: newText };
+      }
+      return n;
+    });
+    setGraph(undefined, [{ nodes: updatedNodes }]);
+    updateJsonValue(editValue);
+    setEditing(false);
+    setSelectedNode({ ...node, text: [{ ...node.text[0], value: editValue }] });
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setEditValue(value);
+  };
 
   return (
     <Styled.StyledForeignObject
-      data-id={`node-${node.id}`}
+      data-id={`node-${id}`}
       width={width}
       height={height}
       x={0}
@@ -51,9 +105,25 @@ const Node = ({ node, x, y }: CustomNodeProps) => {
           data-key={JSON.stringify(text)}
           $isParent={false}
         >
-          <Styled.StyledKey $value={value} $type={typeof text[0].value}>
-            <TextRenderer>{value}</TextRenderer>
-          </Styled.StyledKey>
+          {editing ? (
+            <>
+              <input
+                type="text"
+                value={editValue as string}
+                onChange={e => setEditValue(e.target.value)}
+                style={{ width: "70px", marginRight: "8px" }}
+              />
+              <button onClick={handleSave} style={{ marginRight: "4px" }}>Save</button>
+              <button onClick={handleCancel}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <Styled.StyledKey $value={value} $type={typeof text[0].value}>
+                <TextRenderer>{value}</TextRenderer>
+              </Styled.StyledKey>
+              <button onClick={handleEdit} style={{ marginLeft: "8px" }}>Edit</button>
+            </>
+          )}
         </StyledTextNodeWrapper>
       )}
     </Styled.StyledForeignObject>
